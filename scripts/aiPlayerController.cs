@@ -86,7 +86,7 @@ public class aiPlayerController : MonoBehaviour, PlayerInterface {
     private int waterPacks;
 
     public GameObject target;
-    private bool isTargetPlayer;
+    public bool isTargetPlayer;
 
     //A skill level 1-10 that determines certain factors
     private int skillLevel;
@@ -125,12 +125,14 @@ public class aiPlayerController : MonoBehaviour, PlayerInterface {
     private bool angleClose;
     private bool isShooting;
 
-    private int aiNumber;
+    public int aiNumber;
 
     private bool debugText;
     public float distance;
 
     private Vector3 movementVector;
+
+    public bool pathPending;
 
     //Everything to be done on all players
     void Start()
@@ -153,40 +155,33 @@ public class aiPlayerController : MonoBehaviour, PlayerInterface {
         nextPosCheck = 0f;
         //random skill level 1-10
         skillLevel = Random.Range(1, 11);
-
-    
-
     }
 
     public void initializeSkins(){
         playerProp = PhotonNetwork.MasterClient.CustomProperties;
-        //currentProp = PhotonNetwork.masterClient.CustomProperties;
         if (playerProp == null)
         {
             Debug.Log("Initializing properties");
             playerProp = new ExitGames.Client.Photon.Hashtable();
         }
         int[] skinMatVals = skins.setMySkin(-1);
-        //Debug.Log("my number is " + aiNumber);
         playerProp.Add("skin" + aiNumber, skinMatVals[0]);
         playerProp.Add("mat" + aiNumber, skinMatVals[1]);
         playerProp.Add("username" + aiNumber, playerName);
 
-        PhotonNetwork.MasterClient.SetCustomProperties(playerProp); //currentProp, false);
-        //Debug.Log("properties set for " + aiNumber);
+        PhotonNetwork.MasterClient.SetCustomProperties(playerProp); 
 
         if (team.Equals(PhotonNetwork.LocalPlayer.GetTeam()))
         {
             usernameText.text = playerName;
             namePlateCanvas.GetComponent<cameraBillboard>()
                            .setCam(GameObject.FindGameObjectWithTag("cam")
-                                   .GetComponent<Camera>());
+                           .GetComponent<Camera>());
         }
         else
         {
             namePlateCanvas.gameObject.SetActive(false);
         }
-        //Debug.Log("completed initialization");
     }
     //To be done on only the player who created this AI
     private void Awake()
@@ -199,8 +194,6 @@ public class aiPlayerController : MonoBehaviour, PlayerInterface {
         {
             return;
         }
-       // generateName();
-
     }
     void OnSceneLoaded(Scene scene, LoadSceneMode mode)
     {
@@ -219,85 +212,73 @@ public class aiPlayerController : MonoBehaviour, PlayerInterface {
 
         if (gameStarted)
         {
-            //Debug.Log("Game started");
             if (!dead)
             {
                 //Once the Player is grounded
                 if (controller.isGrounded)
                 {
-                    //controller.enabled = false;
                     if (navAgent.isActiveAndEnabled)
                     {
-                        //distance = navAgent.remainingDistance;
                         if (navAgent.isOnNavMesh)
                         {
 
                             targetPosition = aif.getTarget();
                             if (!targetPosition.AlmostEquals(navAgent.destination, 15f)
                                 && !navAgent.pathPending
-                                    && Vector3.Distance(transform.position, targetPosition) > 10f)
+                                && Vector3.Distance(transform.position, targetPosition) > 10f)
                             {
-                                Debug.Log("Oh boy, new target for " + playerName);
-                                navAgent.SetDestination(targetPosition);
-                                // Debug.Log(playerName + " moving to " + navAgent.destination.ToString() + " from " + targetPosition.ToString());
+                                findNewTarget();
                             }
-                            else if (navAgent.pathPending)
+                            else if (navAgent.pathPending && !transform.position.AlmostEquals(navAgent.destination, 15f))
                             {
-                                //Debug.Log("Manually moving " + playerName);
-                                movementVector = (targetPosition - transform.position).normalized;
-                                navAgent.Move(movementVector * Time.fixedDeltaTime * 17f);
-                                Quaternion lookRotation = Quaternion.LookRotation(new Vector3(movementVector.x, 0, movementVector.z));
-                                sprinting = true;
-                                ac.SetBool("running", true);
-                                if (Quaternion.Angle(lookRotation, transform.rotation) > 30f)
+                                pathPending = true;
+                                if (aiNumber == 4)
                                 {
-                                    transform.rotation = Quaternion.Slerp(transform.rotation, lookRotation, Time.fixedDeltaTime * 2f);
-                                    //Debug.Log(playerName + " turning amount to turn " + Quaternion.Angle(lookRotation, transform.rotation).ToString());
+                                    Debug.Log("Manually moving " + playerName);
+                                }
+                                movePlayerForward();
+
+                            }
+                            else
+                            {
+                                pathPending = false;
+                                if (aiNumber == 4)
+                                {
+                                    Debug.Log("Auto move enabled " + playerName);
                                 }
                             }
                             //turns towards the player it's attacking
-                            if (isTargetPlayer && navAgent.remainingDistance < 10f)
+                            if (isTargetPlayer && navAgent.remainingDistance < 15f)
                             {
-                                Vector3 direction = (targetPosition - transform.position).normalized;
-                                Quaternion lookRotation = Quaternion.LookRotation(new Vector3(direction.x, 0, direction.z));
-                                if (Quaternion.Angle(lookRotation, transform.rotation) > 30f)
+                                if (aiNumber == 4)
                                 {
-                                    transform.rotation = Quaternion.Slerp(transform.rotation, lookRotation, Time.fixedDeltaTime * 2f);
-                                    //Debug.Log(playerName + " turning amount to turn " + Quaternion.Angle(lookRotation, transform.rotation).ToString());
+                                    Debug.Log("Rotating Playa " + playerName);
                                 }
+                                movementVector = (targetPosition - transform.position).normalized;
+                                rotateToTarget(5f);
                             }
-                            /* }*/
                         }
                         else
                         {
+                            if (aiNumber == 4)
+                            {
+                                Debug.Log("jumping because I'm off the navmesh -" + playerName);
+                            }
                             //Debug.Log(playerName + " jumping because I'm off the navmesh");
-                            navAgent.enabled = false;
-                            //Debug.Log(playerName + " is grounded with an active Navagent, but is not on mesh!");
-                            // navAgent.Warp(transform.position);
-
-                            moveDirection = Vector3.zero;
-                            moveDirection = targetPosition - transform.position;
-                            moveDirection.Normalize();
-                            moveDirection.x *= 15f;
-                            moveDirection.z *= 15f;
-                            moveDirection.y = jumpSpeed;
-                            controller.Move(moveDirection * Time.fixedDeltaTime);
-
-                            jumping = true;
-                            ac.SetBool("jumping", true);
+                            jumpForwards(15f);
                         }
                     }
                     else
                     {
-                        Debug.Log("Enabling Nav Agent " + playerName);
+                        //Debug.Log("Enabling Nav Agent " + playerName);
                         navAgent.enabled = true;
                         if (navAgent.isOnNavMesh 
-                        && !navAgent.pathPending 
-                            && !(targetPosition.AlmostEquals(navAgent.destination, 15f)))
+                            && !navAgent.pathPending 
+                            && !targetPosition.AlmostEquals(navAgent.destination, 15f))
                         {
-                            Debug.Log("setting dest on " + playerName);
-                            targetPosition = aif.getTarget();
-                            navAgent.SetDestination(targetPosition);
+
+                            //Debug.Log("setting dest on " + playerName);
+                            findNewTarget();
                            // if (!targetPosition.AlmostEquals(navAgent.destination, 5f))
                           //  {
                           //      navAgent.SetDestination(targetPosition);
@@ -324,11 +305,14 @@ public class aiPlayerController : MonoBehaviour, PlayerInterface {
 
                     if (jumping)
                     {
-
+                        if (aiNumber == 4)
+                        {
+                            Debug.Log("landed! -" + playerName);
+                        }
                         //next jump randomly between .6 and 1 so they're not jumping in unison
                         // nextPosCheck += Random.Range(.6f, 3.5f);//was 1.2
                         // moveDirection = Vector3.zero;
-                        Debug.Log(playerName + " finished jump");
+                        //Debug.Log(playerName + " finished jump");
                         navAgent.enabled = true;
                         jumping = false;
 
@@ -340,7 +324,6 @@ public class aiPlayerController : MonoBehaviour, PlayerInterface {
                         {
                             nextPosCheck += Random.Range(.5f, 5f);
                         }
-                        /////////New code
                         if (navAgent.isActiveAndEnabled)
                         {
                             //distance = navAgent.remainingDistance;
@@ -349,9 +332,8 @@ public class aiPlayerController : MonoBehaviour, PlayerInterface {
                                 if (!targetPosition.AlmostEquals(navAgent.destination, 5f) && !navAgent.pathPending)
                                 //if (!targetPosition.AlmostEquals(navAgent.destination, 5f))
                                 {
-                                    Debug.Log("Resetting position post jump for " + playerName);
-                                    targetPosition = aif.getTarget();
-                                    navAgent.SetDestination(targetPosition);
+                                    //Debug.Log("Resetting position post jump for " + playerName);
+                                    findNewTarget();
                                 }
                                 /* }*/
                             }
@@ -386,7 +368,7 @@ public class aiPlayerController : MonoBehaviour, PlayerInterface {
 
                     ac.SetBool("jumping", false);
 
-                    if (!(navAgent.velocity.magnitude > 0f))
+                    if (!(navAgent.velocity.magnitude > 0f) && !pathPending)
                     {
                         ac.SetBool("running", false);
                     }
@@ -442,41 +424,13 @@ public class aiPlayerController : MonoBehaviour, PlayerInterface {
                 //give a feel that AI isn't pausing
                 if (nextPosCheck < Time.time)
                 {
-                    //Wait a little longer if mid jump
-                    nextPosCheck = Time.time + 1.5f;
+                    nextPosCheck = Time.time + Random.Range(.5f, 2.5f);
 
                     //If we haven't moved, and the navAgent's path is ready
-                    if (prevPosition.AlmostEquals(transform.position, 1f) && !jumping && !navAgent.pathPending)
+                    if (prevPosition.AlmostEquals(transform.position, 1f) && !jumping)// && !navAgent.pathPending)
                    // if (prevPosition.AlmostEquals(transform.position, 1f) && !jumping)
                     {
-                        if (navAgent.isOnNavMesh)
-                        {
-                            Debug.Log("JUMPTime " + playerName);
-                            navAgent.enabled = false;
-                            jumping = true;
-                            ac.SetBool("jumping", true);
-
-                            moveDirection = Vector3.zero;
-                            moveDirection = targetPosition - transform.position;
-                            moveDirection.Normalize();
-                            moveDirection.x *= 15f;
-                            moveDirection.z *= 15f;
-                            moveDirection.y = jumpSpeed;
-                        }
-
-                        else
-                        {
-                            navAgent.enabled = false;
-                            jumping = true;
-                            ac.SetBool("jumping", true);
-                            //Debug.Log("gotta jump");
-                            moveDirection = Vector3.zero;
-                            moveDirection = targetPosition - transform.position;
-                            moveDirection.Normalize();
-                            moveDirection.x *= 15f;
-                            moveDirection.z *= 15f;
-                            moveDirection.y = jumpSpeed;
-                        }
+                        jumpForwards(15f);
                         controller.Move(moveDirection * Time.fixedDeltaTime);
                     }
                     //We have moved since last check
@@ -489,40 +443,23 @@ public class aiPlayerController : MonoBehaviour, PlayerInterface {
                             {
                                 if (transform.position.magnitude < 250f)
                                 {
-                                    navAgent.enabled = false;
-                                    jumping = true;
-                                    ac.SetBool("jumping", true);
+                                   
                                     //chance to jump to emulate a good player who shoots while jumping
                                     int randAttack = Random.Range(0, skillLevel);
                                     if (randAttack > 5)
                                     {
                                         //Jumpas randomly
-                                        moveDirection = Vector3.zero;
-                                        moveDirection = targetPosition - transform.position;
-                                        moveDirection.Normalize();
-                                        moveDirection.x *= Random.Range(1f, 45f) - 15f; //was 25
-                                        moveDirection.z *= Random.Range(1f, 45f) - 15f;
-                                        moveDirection.y = jumpSpeed;
+                                        jumpRandomDir(15f);
                                     }
 
                                 }
                                 else
                                 {
-                                    navAgent.enabled = false;
-                                    jumping = true;
-                                    ac.SetBool("jumping", true);
-
                                     //chance to jump to emulate a good player who shoots while jumping
                                     int randAttack = Random.Range(0, skillLevel);
                                     if (randAttack > 5)
                                     {
-                                        //Jumps towards char
-                                        moveDirection = Vector3.zero;
-                                        moveDirection = targetPosition - transform.position;
-                                        moveDirection.Normalize();
-                                        moveDirection.x *= 15f;
-                                        moveDirection.z *= 15f;
-                                        moveDirection.y = jumpSpeed;
+                                        jumpForwards(Random.Range(0f, 15f));
                                     }
                                 }
                             }
@@ -533,17 +470,8 @@ public class aiPlayerController : MonoBehaviour, PlayerInterface {
                                 int randomNum = Random.Range(0, 5);
                                 if(randomNum == 5)
                                 {
-                                    Debug.Log("oops, jumoing " + playerName);
-                                    navAgent.enabled = false;
-                                    jumping = true;
-                                    ac.SetBool("jumping", true);
-
-                                    moveDirection = Vector3.zero;
-                                    moveDirection = targetPosition - transform.position;
-                                    moveDirection.Normalize();
-                                    moveDirection.x *= 15f;
-                                    moveDirection.z *= 15f;
-                                    moveDirection.y = jumpSpeed;
+                                    //Debug.Log("oops, jumoing " + playerName);
+                                    jumpForwards(15f);
                                 }
                             }
                         }
@@ -551,7 +479,12 @@ public class aiPlayerController : MonoBehaviour, PlayerInterface {
                         {
                             if (navAgent.pathPending)
                             {
-                            Debug.Log("check back later homie, still pending my path " + playerName);
+                                jumpRandomDir(Random.Range(0f, 15f));
+                                //Debug.Log("check back later homie, still pending my path " + playerName);
+                            }
+                            else
+                            {
+                                //Debug.Log("No jump cuz not on navmesh");
                             }
                         }
                     }
@@ -560,7 +493,6 @@ public class aiPlayerController : MonoBehaviour, PlayerInterface {
                 }
             }
         }
-
     }
 
     void Update()
@@ -585,7 +517,6 @@ public class aiPlayerController : MonoBehaviour, PlayerInterface {
                         abc.applyWaterPack();
                         waterPacks--;
                     }
-
                     if (abc.isReloading())
                     {
                         if (!ac.GetBool("reloading"))
@@ -605,8 +536,6 @@ public class aiPlayerController : MonoBehaviour, PlayerInterface {
                         }
                     }
                 }
-
-
                 if (sprinting && Time.time > nextRun)
                 {
                     newVect = transform.position;
@@ -620,18 +549,10 @@ public class aiPlayerController : MonoBehaviour, PlayerInterface {
 
         else
         {
-            //if (!debugText)
-            //{
-            //    Debug.Log("Game not started");
-            //    debugText = true;
-            //}
-
             if (countdown)
             {
-                // Debug.Log("Counting down");
                 if (PhotonNetwork.Time > gameTimer)
                 {
-                    // Debug.Log("Gametime!");
                     countdown = false;
                     gameStarted = true;
                     if (navAgent.isOnNavMesh)
@@ -639,15 +560,11 @@ public class aiPlayerController : MonoBehaviour, PlayerInterface {
                         navAgent.SetDestination(targetPosition);
                     }
                     aif.startGame();
-                    //sets the active skin on other players' devices
                 }
             }
         }
     }
 
-    //public void setNum(string num){
-    //    playerNum = num;
-    //}
     public PunTeams.Team getTeam(){
         return team;
     }
@@ -681,7 +598,6 @@ public class aiPlayerController : MonoBehaviour, PlayerInterface {
                 team = PunTeams.Team.blue;
             }
             aiNumber = numAI;
-            //Debug.Log("you should see this 8 times if not host");
             object obj;
             object mat;
             object plrNam;
@@ -810,23 +726,14 @@ public class aiPlayerController : MonoBehaviour, PlayerInterface {
         if (theBlaster.GetComponent<Blaster>().getBlasterType() == 1)
         {
             pView.RPC("setAIBlasterOnOthers", RpcTarget.AllBufferedViaServer, blastNum, pView.ViewID, 1);
-            //theBlaster.transform.SetParent(hand.transform);
-            //theBlaster.transform.localPosition = new Vector3(.5f, .05f, -.01f);
-            //theBlaster.transform.localRotation = Quaternion.Euler(0f, -25f, -90f);
         }
         else if (theBlaster.GetComponent<Blaster>().getBlasterType() == 2)
         {
             pView.RPC("setAIBlasterOnOthers", RpcTarget.AllBufferedViaServer, blastNum, pView.ViewID, 2);
-            //theBlaster.transform.SetParent(hand.transform);
-            //theBlaster.transform.localPosition = new Vector3(.2f, .1f, 0);
-            //theBlaster.transform.localRotation = Quaternion.Euler(-90f, 180f, -110f);
         }
         else if (theBlaster.GetComponent<Blaster>().getBlasterType() == 3)
         {
             pView.RPC("setAIBlasterOnOthers", RpcTarget.AllBufferedViaServer, blastNum, pView.ViewID, 3);
-            //theBlaster.transform.SetParent(hand.transform);
-            //theBlaster.transform.localPosition = new Vector3(.176f, .1f, -.05f);
-            //theBlaster.transform.localRotation = Quaternion.Euler(-180, -20, 70);
         }
     }
     [PunRPC]
@@ -882,7 +789,6 @@ public class aiPlayerController : MonoBehaviour, PlayerInterface {
             }
             dead = true;
             aif.setDead(true);
-            //abc.dropAllBlasters();
             StartCoroutine(die(viewID));
         }
         else
@@ -1006,18 +912,98 @@ public class aiPlayerController : MonoBehaviour, PlayerInterface {
         return aiNumber;
     }
 
-    private void RotateTowards(Transform foundPlayer)
-    {
-        Vector3 direction = (foundPlayer.position - transform.position).normalized;
-        Quaternion lookRotation = Quaternion.LookRotation(new Vector3(direction.x, 0, direction.z));    // flattens the vector3
-        transform.rotation = Quaternion.Slerp(transform.rotation, lookRotation, Time.deltaTime * 10f);
-    }
     public string getName(){
         return playerName;
     }
 
     public void endGame(){
         gameStarted = false;
+    }
+
+    private void findNewTarget()
+    {
+        if (aiNumber == 4)
+        {
+            Debug.Log("Finding new target " + playerName);
+        }
+        // Debug.Log("Oh boy, new target for " + playerName);
+        targetPosition = aif.getTarget();
+        navAgent.SetDestination(targetPosition);
+    }
+
+    //The problem with this is that once a path has been found, even if it's incomplete
+    //the player will begin to follow it kinda
+    private void movePlayerForward()
+    {
+       
+            movementVector = (targetPosition - transform.position).normalized;
+
+        // Quaternion lookRotation = Quaternion.LookRotation(movementVector);
+        //if (Quaternion.Angle(lookRotation, transform.rotation) > 15f)
+        //{
+        //    rotateToTarget(10f);
+        //}
+        //else
+        //{
+        navAgent.Move(movementVector * Time.fixedDeltaTime * 10f);
+       // controller.Move(Vector3.forward * Time.fixedDeltaTime * 10f);
+        //    if(aiNumber == 4)
+        //{
+        //    Debug.Log("moving to " + targetPosition.ToString() + " by moving " + movementVector.ToString() + " from " + transform.position.ToString());
+        //}
+        // }
+        //sprinting = true;
+        //ac.SetBool("jumping", false);
+        //ac.SetBool("running", true);
+    }
+
+    private void rotateToTarget(float rotateMultiplier)
+    {
+        Quaternion lookRotation = Quaternion.LookRotation(movementVector);
+        if (Quaternion.Angle(lookRotation, transform.rotation) > 15f)
+        {
+            transform.rotation = Quaternion.Slerp(transform.rotation, lookRotation, Time.fixedDeltaTime * rotateMultiplier);
+            //Debug.Log(playerName + " turning amount to turn " + Quaternion.Angle(lookRotation, transform.rotation).ToString() + " to " + targetPosition.ToString());
+        }
+    }
+
+    private void jumpForwards(float jumpDist)
+    {
+        if (aiNumber == 4)
+        {
+            Debug.Log("Forwards jumping " + playerName);
+        }
+        navAgent.enabled = false;
+        moveDirection = Vector3.zero;
+        moveDirection = targetPosition - transform.position;
+        moveDirection.Normalize();
+        moveDirection.x *= jumpDist;
+        moveDirection.z *= jumpDist;
+        moveDirection.y = jumpSpeed;
+        controller.Move(moveDirection * Time.fixedDeltaTime);
+
+        jumping = true;
+        ac.SetBool("jumping", true);
+    }
+
+    private void jumpRandomDir(float jumpDist)
+    {
+        if (aiNumber == 4)
+        {
+            Debug.Log("Randomly jumping " + playerName);
+        }
+        navAgent.enabled = false;
+        moveDirection = Vector3.zero;
+        moveDirection = new Vector3(Random.Range(-10.0f, 10.0f), 0, Random.Range(-10.0f, 10.0f));
+        moveDirection.Normalize();
+        moveDirection.x *= jumpDist;
+        moveDirection.z *= jumpDist;
+        moveDirection.y = jumpSpeed;
+        controller.Move(moveDirection * Time.fixedDeltaTime);
+
+        jumping = true;
+        ac.SetBool("jumping", true);
+
     }
 
 
